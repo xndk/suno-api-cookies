@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { DEFAULT_MODEL, sunoApi } from "@/lib/SunoApi";
 import { corsHeaders } from "@/lib/utils";
+import { cookies } from 'next/headers';
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      const audioInfo = await (await sunoApi)
+      const audioInfo = await (await sunoApi((await cookies()).toString()))
         .extendAudio(audio_id, prompt, continue_at, tags, title, model || DEFAULT_MODEL);
 
       return new NextResponse(JSON.stringify(audioInfo), {

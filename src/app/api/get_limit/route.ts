@@ -1,16 +1,14 @@
 import { NextResponse, NextRequest } from "next/server";
 import { sunoApi } from "@/lib/SunoApi";
 import { corsHeaders } from "@/lib/utils";
+import { cookies } from 'next/headers';
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   if (req.method === 'GET') {
     try {
-
-      const limit = await (await sunoApi).get_credits();
-
-
+      const limit = await (await sunoApi((await cookies()).toString())).get_credits();
       return new NextResponse(JSON.stringify(limit), {
         status: 200,
         headers: {

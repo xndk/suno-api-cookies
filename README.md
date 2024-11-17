@@ -1,3 +1,5 @@
+**TODO:** write docs. Currently just pass your cookies in the `Cookie` header in your requests.
+
 <div align="center">
   <h1 align="center"">
       Suno AI API
@@ -126,8 +128,6 @@ Suno API currently mainly implements the following APIs:
     If no IDs are provided, all music will be returned.
 - `/api/get_limit`: Get quota Info
 - `/api/extend_audio`: Extend audio length
-- `/api/generate_stems`: Make stem tracks (separate audio and music track)
-- `/api/get_aligned_lyrics`: Get list of timestamps for each word in the lyrics
 - `/api/clip`: Get clip information based on ID passed as query parameter `id`
 - `/api/concat`: Generate the whole song from extensions
 ```
@@ -181,7 +181,7 @@ def get_clip(clip_id):
     return response.json()
 
 def generate_whole_song(clip_id):
-    payload = {"clip_id": clip_id}
+    payloyd = {"clip_id": clip_id}
     url = f"{base_url}/api/concat"
     response = requests.post(url, json=payload)
     return response.json()

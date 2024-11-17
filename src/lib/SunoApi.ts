@@ -4,6 +4,7 @@ import pino from 'pino';
 import { wrapper } from 'axios-cookiejar-support';
 import { CookieJar } from 'tough-cookie';
 import { sleep } from '@/lib/utils';
+import { v4 as uuidv4 } from 'uuid';
 
 const logger = pino();
 export const DEFAULT_MODEL = 'chirp-v3-5';
@@ -28,7 +29,7 @@ export interface AudioInfo {
 }
 
 class SunoApi {
-  private static BASE_URL: string = 'https://studio-api.suno.ai';
+  private static BASE_URL: string = 'https://studio-api.prod.suno.com';
   private static CLERK_BASE_URL: string = 'https://clerk.suno.com';
   private static JSDELIVR_BASE_URL: string = 'https://data.jsdelivr.com';
 
@@ -36,6 +37,8 @@ class SunoApi {
   private clerkVersion?: string;
   private sid?: string;
   private currentToken?: string;
+  private sessionToken?: string;
+  private deviceId: string = uuidv4();
 
   constructor(cookie: string) {
     const cookieJar = new CookieJar();
@@ -63,6 +66,7 @@ class SunoApi {
     await this.getClerkLatestVersion();
     await this.getAuthToken();
     await this.keepAlive();
+    //await this.getSessionToken();
     return this;
   }
 
@@ -101,6 +105,21 @@ class SunoApi {
   }
 
   /**
+   * Get the session token (not to be confused with session ID) and save it for later use.
+   */
+  private async getSessionToken() {
+    const tokenResponse = await this.client.post(
+      'https://studio-api.prod.suno.com/api/user/create_session_id/',
+      {
+        session_properties: JSON.stringify({ deviceId: this.deviceId }),
+        session_type: 1
+      }
+    );
+    logger.info(tokenResponse.data.session_id);
+    this.sessionToken = tokenResponse.data.session_id;
+  }
+
+  /**
    * Keep the session alive.
    * @param isWait Indicates if the method should wait for the session to be fully renewed before returning.
    */
@@ -117,6 +136,7 @@ class SunoApi {
       await sleep(1, 2);
     }
     const newToken = renewResponse.data['jwt'];
+    logger.info(newToken);
     // Update Authorization field in request header with the new JWT token
     this.currentToken = newToken;
   }
@@ -237,9 +257,10 @@ class SunoApi {
   ): Promise<AudioInfo[]> {
     await this.keepAlive(false);
     const payload: any = {
-      make_instrumental: make_instrumental == true,
+      make_instrumental: make_instrumental,
       mv: model || DEFAULT_MODEL,
-      prompt: ''
+      prompt: '',
+      generation_type: 'TEXT'
     };
     if (isCustom) {
       payload.tags = tags;
@@ -266,8 +287,9 @@ class SunoApi {
           2
         )
     );
+    try {
     const response = await this.client.post(
-      `${SunoApi.BASE_URL}/api/generate/v2/`,
+      `${SunoApi.BASE_URL}/api/generate/v2`,
       payload,
       {
         timeout: 10000 // 10 seconds timeout
@@ -318,6 +340,8 @@ class SunoApi {
         negative_tags: audio.metadata.negative_tags,
         duration: audio.metadata.duration
       }));
+    }} catch (err: any) {
+      logger.info(JSON.stringify(err.toJSON()));
     }
   }
 
@@ -368,7 +392,6 @@ class SunoApi {
     title: string = '',
     model?: string
   ): Promise<AudioInfo> {
-    await this.keepAlive(false);
     const response = await this.client.post(
       `${SunoApi.BASE_URL}/api/generate/v2/`,
       {
@@ -377,54 +400,14 @@ class SunoApi {
         mv: model || DEFAULT_MODEL,
         prompt: prompt,
         tags: tags,
-        task: 'extend',
-        title: title
+        title: title,
+        metadata: {
+          create_session_token: this.sessionToken
+        }
       }
     );
     console.log('response：\n', response);
     return response.data;
-  }
-
-  /**
-   * Generate stems for a song.
-   * @param song_id The ID of the song to generate stems for.
-   * @returns A promise that resolves to an AudioInfo object representing the generated stems.
-   */
-  public async generateStems(song_id: string): Promise<AudioInfo[]> {
-    await this.keepAlive(false);
-    const response = await this.client.post(
-      `${SunoApi.BASE_URL}/api/edit/stems/${song_id}`, {}
-    );
-
-    console.log('generateStems response:\n', response?.data);
-    return response.data.clips.map((clip: any) => ({
-      id: clip.id,
-      status: clip.status,
-      created_at: clip.created_at,
-      title: clip.title,
-      stem_from_id: clip.metadata.stem_from_id,
-      duration: clip.metadata.duration
-    }));
-  }
-
-
-  /**
-   * Get the lyric alignment for a song.
-   * @param song_id The ID of the song to get the lyric alignment for.
-   * @returns A promise that resolves to an object containing the lyric alignment.
-   */
-  public async getLyricAlignment(song_id: string): Promise<object> {
-    await this.keepAlive(false);
-    const response = await this.client.get(`${SunoApi.BASE_URL}/api/gen/${song_id}/aligned_lyrics/v2/`);
-
-    console.log(`getLyricAlignment ~ response:`, response.data);
-    return response.data?.aligned_words.map((transcribedWord: any) => ({
-      word: transcribedWord.word,
-      start_s: transcribedWord.start_s,
-      end_s: transcribedWord.end_s,
-      success: transcribedWord.success,
-      p_align: transcribedWord.p_align
-    }));
   }
 
   /**
@@ -520,13 +503,14 @@ class SunoApi {
   }
 }
 
-const newSunoApi = async (cookie: string) => {
-  const sunoApi = new SunoApi(cookie);
-  return await sunoApi.init();
-};
+//const newSunoApi 
 
 if (!process.env.SUNO_COOKIE) {
   console.log('Environment does not contain SUNO_COOKIE.', process.env);
 }
 
-export const sunoApi = newSunoApi(process.env.SUNO_COOKIE || '');
+export const sunoApi = async (cookie: string) => {
+  logger.info(cookie);
+  const sunoApi = new SunoApi(cookie);
+  return await sunoApi.init();
+};
